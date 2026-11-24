@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="매일 밤 12시에 바뀌는 한국어 낱말 유사도 추측 게임">
+<style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}img{max-width:100%}</style>
+<title>낱말온도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: one narrow instrument column — readout tube on top, input, then the guess log read like a lab notebook. */
+:root {
+  --bg: #edf1f4;
+  --surface: #ffffff;
+  --sunk: #e3e9ee;
+  --ink: #14202b;
+  --muted: #5a6a77;
+  --line: #d3dce3;
+  --cold: #3f86c4;
+  --warm: #e59a2f;
+  --hot: #d8401f;
+  --ok: #1f8a5b;
+  --focus: #3f86c4;
+  --display: "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1318; --surface: #151e26; --sunk: #1c2731; --ink: #e5ecf1; --muted: #8d9ca8; --line: #263440;
+    --cold: #5ea6e3; --warm: #f0ad48; --hot: #f05a37; --ok: #3cbf86; --focus: #5ea6e3; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1318; --surface: #151e26; --sunk: #1c2731; --ink: #e5ecf1; --muted: #8d9ca8; --line: #263440;
+  --cold: #5ea6e3; --warm: #f0ad48; --hot: #f05a37; --ok: #3cbf86; --focus: #5ea6e3; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--ink); }
+body {
+  font-family: var(--body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* header */
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.logo { font-family: var(--display); font-size: 40px; line-height: 1; letter-spacing: -0.5px; margin: 0; display: flex; align-items: baseline; gap: 2px; }
+.logo .deg { color: var(--hot); font-family: var(--mono); font-size: 26px; font-weight: 600; transform: translateY(-14px); }
+.meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
+.clock { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* readout */
+.readout { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 14px; display: flex; flex-direction: column; gap: 14px; }
+.readtop { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.lastword { font-size: 20px; font-weight: 700; min-height: 1.4em; overflow-wrap: anywhere; }
+.lastword small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.3px; }
+.bigtemp { font-family: var(--mono); font-weight: 600; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.bigtemp .u { font-size: 22px; color: var(--muted); margin-left: 2px; }
+.tube { position: relative; height: 46px; }
+.tube .bulb { position: absolute; left: 0; top: 2px; width: 28px; height: 28px; border-radius: 50%; background: var(--sunk); border: 1px solid var(--line); transition: background .4s; }
+.tube .glass { position: absolute; left: 20px; right: 0; top: 9px; height: 14px; border-radius: 0 7px 7px 0; background: var(--sunk); border: 1px solid var(--line); border-left: 0; overflow: hidden; }
+.tube .merc { height: 100%; width: 0%; background: var(--cold); transition: width .6s cubic-bezier(.2,.8,.2,1), background .4s; }
+.tick { position: absolute; top: 25px; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+.tick::before { content: ""; position: absolute; left: 50%; top: -6px; width: 1px; height: 6px; background: var(--muted); }
+.legend { font-size: 12.5px; color: var(--muted); }
+.legend b { font-family: var(--mono); color: var(--ink); font-weight: 500; }
+
+/* input */
+form.guess { display: flex; gap: 8px; }
+form.guess input { flex: 1; min-width: 0; font-size: 18px; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); }
+form.guess input:focus { border-color: var(--focus); outline: none; }
+form.guess button { padding: 0 20px; border-radius: 10px; border: 0; background: var(--ink); color: var(--bg); font-weight: 700; cursor: pointer; }
+form.guess button:disabled, form.guess input:disabled { opacity: .5; cursor: default; }
+.msg { min-height: 1.4em; font-size: 14px; color: var(--muted); margin-top: -8px; }
+.msg.err { color: var(--hot); }
+.msg.good { color: var(--ok); font-weight: 600; }
+
+/* result banner */
+.done { background: var(--surface); border: 1.5px solid var(--ok); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.done h2 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 26px; }
+.done h2 em { font-style: normal; color: var(--hot); }
+.done p { margin: 0; color: var(--muted); }
+.row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.btn:hover { border-color: var(--muted); }
+.btn.danger { color: var(--hot); }
+.near { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px 12px; font-size: 13.5px; }
+.near span { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px dotted var(--line); padding: 2px 0; min-width: 0; }
+.near span i { font-style: normal; font-family: var(--mono); color: var(--muted); font-size: 12px; }
+
+/* log */
+.logwrap { display: flex; flex-direction: column; gap: 6px; }
+.loghead { display: flex; justify-content: space-between; align-items: baseline; }
+.loghead h3, .board h3 { margin: 0; font-size: 13px; letter-spacing: 0.6px; color: var(--muted); font-weight: 500; }
+.log { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.lrow { display: grid; grid-template-columns: 2.6em minmax(0, 1fr) 5.2em 7.5em; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--line); }
+.lrow:first-child { border-top: 0; }
+.lrow.hd { font-size: 11.5px; color: var(--muted); letter-spacing: 0.4px; padding-block: 7px; background: var(--sunk); }
+.lrow.latest { background: color-mix(in srgb, var(--warm) 12%, var(--surface)); }
+.lrow.win { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.lrow .n { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.lrow .w { font-weight: 600; overflow-wrap: anywhere; }
+.lrow .t { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; font-weight: 500; }
+.rk { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-family: var(--mono); color: var(--muted); }
+.rk .bar { height: 5px; background: var(--sunk); border-radius: 3px; overflow: hidden; }
+.rk .bar i { display: block; height: 100%; border-radius: 3px; }
+.rk.cold { font-family: var(--body); }
+.empty { padding: 22px 16px; color: var(--muted); font-size: 14px; text-align: center; }
+
+/* board */
+.board { display: flex; flex-direction: column; gap: 6px; }
+.blist { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.brow { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+.brow:first-child { border-top: 0; }
+.brow img { width: 28px; height: 28px; border-radius: 50%; }
+.brow .nm { font-weight: 600; overflow-wrap: anywhere; }
+.brow .nm small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.brow .st { font-size: 13px; color: var(--muted); text-align: right; font-family: var(--mono); }
+.brow .st.win { color: var(--ok); font-weight: 600; }
+.note { font-size: 13px; color: var(--muted); padding: 12px 14px; }
+
+details.help { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+details.help summary { cursor: pointer; font-weight: 600; }
+details.help ul { margin: 10px 0 2px; padding-left: 1.2em; color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+footer { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+footer b { color: var(--ink); font-weight: 600; }
+.confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+
+@media (max-width: 480px) {
+  .logo { font-size: 34px; }
+  .bigtemp { font-size: 36px; }
+  .lrow { grid-template-columns: 2.2em minmax(0, 1fr) 4.6em 5.4em; gap: 8px; padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .tube .merc, .tube .bulb { transition: none; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 class="logo">낱말온도<span class="deg">°</span></h1>
+    <div class="meta">
+      <span>오늘의 낱말 <b id="pno">#—</b> · <span id="pdate">—</span></span>
+      <span>다음 낱말까지 <span class="clock" id="clock">--:--:--</span></span>
+    </div>
+  </header>
+
+  <section class="readout" aria-live="polite">
+    <div class="readtop">
+      <div class="lastword" id="lastword"><small>방금 넣은 낱말</small><span id="lastw">아직 없어요</span></div>
+      <div class="bigtemp" id="bigtemp">--.--<span class="u">°</span></div>
+    </div>
+    <div class="tube" id="tube">
+      <div class="glass"><div class="merc" id="merc"></div></div>
+      <div class="bulb" id="bulb"></div>
+    </div>
+    <div class="legend" id="legend">단어 사전을 불러오는 중이에요…</div>
+  </section>
+
+  <form class="guess" id="form" autocomplete="off">
+    <input id="in" type="text" inputmode="text" enterkeyhint="go" placeholder="명사를 하나 넣어 보세요" aria-label="추측할 낱말" disabled>
+    <button id="go" type="submit" disabled>재기</button>
+  </form>
+  <div class="msg" id="msg" role="status"></div>
+
+  <section class="done" id="done" hidden></section>
+
+  <section class="logwrap">
+    <div class="loghead"><h3>측정 기록</h3><span class="legend" id="count"></span></div>
+    <div class="log" id="log"></div>
+    <div class="confirm" id="giveupbox"></div>
+  </section>
+
+  <section class="board" id="board">
+    <h3>오늘 같이 푸는 사람들</h3>
+    <div class="blist" id="blist"><div class="note">친구 기록을 확인하는 중이에요…</div></div>
+  </section>
+
+  <details class="help">
+    <summary>어떻게 하나요?</summary>
+    <ul>
+      <li>매일 밤 12시(한국 시간)에 새 정답 낱말이 정해져요. 모두에게 같은 낱말이에요.</li>
+      <li>정답은 늘 <b>두 글자 이상의 일반 명사</b>예요. 고유명사, 동사, 부사는 정답이 되지 않아요.</li>
+      <li>아무 낱말이나 넣으면 정답과 뜻이 얼마나 가까운지 <b>온도</b>로 알려 줘요. 100°가 정답이에요.</li>
+      <li>정답과 가장 가까운 낱말 1,000개 안에 들면 <b>순위</b>가 나와요. 1위가 정답 바로 옆이에요.</li>
+      <li>뜻이 비슷한 정도는 AI 임베딩 모델(Qwen3-Embedding)이 미리 계산해 두었어요.</li>
+    </ul>
+  </details>
+
+  <footer>
+    <span>어제의 낱말: <b id="yday">—</b></span>
+    <span>낱말 출처: 국립국어원 「한국어 학습용 어휘 목록」(공공누리 제1유형), 형태소 분석 Kiwi, 임베딩 Qwen3-Embedding-4B</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const DAY = 86400000, KST = 9 * 3600000;
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+  const hasBatchim = (w) => { const c = w.charCodeAt(w.length - 1) - 0xac00; return c >= 0 && c <= 11171 && c % 28 !== 0; };
+  const josa = (w, a, b) => w + (hasBatchim(w) ? a : b);
+  const fmt = (t) => (t >= 100 ? '100.00' : t.toFixed(2));
+  const kstDayIndex = (ms) => Math.floor((ms + KST) / DAY);
+  const dayKeyOf = (idx) => new Date(idx * DAY).toISOString().slice(0, 10);
+
+  let meta, words, wordIndex, N, D, V, norms;
+  let day = null;      // {idx, key, no, answer, sims, rankOf, order, med, t1, t10, t1000}
+  let game = null;     // {guesses:[{w,t,r}], solved, gaveUp, finishedAt}
+  let lastGuess = null;
+
+  // ---------- temperature colour ----------
+  const css = getComputedStyle(document.documentElement);
+  function tempColor(t) {
+    const c = (v) => css.getPropertyValue(v).trim();
+    if (t >= 100) return c('--ok');
+    if (t < 15) return c('--cold');
+    if (t < 35) return `color-mix(in srgb, ${c('--warm')} ${((t - 15) / 20 * 100).toFixed(0)}%, ${c('--cold')})`;
+    return `color-mix(in srgb, ${c('--hot')} ${Math.min(100, (t - 35) / 30 * 100).toFixed(0)}%, ${c('--warm')})`;
+  }
+
+  // ---------- data ----------
+  async function load() {
+    const [m, wtxt, buf] = await Promise.all([
+      fetch('meta.json').then((r) => { if (!r.ok) throw new Error('meta'); return r.json(); }),
+      fetch('words.txt').then((r) => { if (!r.ok) throw new Error('words'); return r.text(); }),
+      fetch('vec.txt').then((r) => { if (!r.ok) throw new Error('vec'); return r.text(); }),
+    ]);
+    meta = m; words = wtxt.split('\n').filter(Boolean); N = words.length; D = meta.dim;
+    const bin = atob(buf.replace(/\s+/g, ''));
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    V = new Int8Array(u8.buffer);
+    if (V.length !== N * D) throw new Error('size');
+    wordIndex = new Map(words.map((w, i) => [w, i]));
+    norms = new Float32Array(N);
+    for (let i = 0; i < N; i++) { let s = 0; const o = i * D; for (let d = 0; d < D; d++) { const x = V[o + d]; s += x * x; } norms[i] = Math.sqrt(s) || 1; }
+  }
+
+  function answerFor(idx) {
+    const k = ((idx - meta.startIdx) % meta.order.length + meta.order.length) % meta.order.length;
+    return meta.order[k];
+  }
+
+  function setupDay(idx) {
+    const a = answerFor(idx);
+    const sims = new Float32Array(N); const oa = a * D;
+    for (let i = 0; i < N; i++) { let s = 0; const o = i * D; for (let d = 0; d < D; d++) s += V[o + d] * V[oa + d]; sims[i] = s / (norms[i] * norms[a]); }
+    sims[a] = 2;
+    // ranks are counted among the common "core" words only, so rare words don't crowd the top 1000
+    const C = meta.core || N;
+    const order = new Uint32Array(C); for (let i = 0; i < C; i++) order[i] = i;
+    order.sort((x, y) => sims[y] - sims[x]);
+    const sorted = new Float32Array(C); for (let k = 0; k < C; k++) sorted[k] = sims[order[k]];
+    const rankOf = (i) => {
+      if (i === a) return 0;
+      let lo = 0, hi = C; const s = sims[i];
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] > s) lo = mid + 1; else hi = mid; }
+      return i < C ? lo : Math.max(1, lo);
+    };
+    const med = sorted[Math.floor(C / 2)];
+    const temp = (i) => (i === a ? 100 : 100 * (sims[i] - med) / (1 - med));
+    day = { idx, key: dayKeyOf(idx), no: idx - meta.startIdx + 1, answer: a, sims, rankOf, order, temp,
+      t1: temp(order[1]), t10: temp(order[10]), t1000: temp(order[1000]) };
+    game = store.get('natmal:v1:' + day.key) || { guesses: [], solved: false, gaveUp: false, finishedAt: null };
+    lastGuess = game.guesses.length ? game.guesses[game.guesses.length - 1].w : null;
+    $('pno').textContent = '#' + day.no;
+    $('pdate').textContent = day.key.slice(5).replace('-', '월 ') + '일';
+    $('yday').textContent = day.no > 1 ? words[answerFor(idx - 1)] : '(첫날이라 없어요)';
+    renderAll();
+    board.onDay();
+  }
+
+  // ---------- guessing ----------
+  function save() { store.set('natmal:v1:' + day.key, game); board.pushSoon(); }
+
+  function submit(raw) {
+    const w = raw.replace(/\s+/g, '').trim();
+    if (!w) return;
+    const msg = $('msg'); msg.className = 'msg';
+    if (!/^[가-힣]+$/.test(w)) { msg.className = 'msg err'; msg.textContent = '한글 낱말만 넣을 수 있어요.'; return; }
+    const prev = game.guesses.find((g) => g.w === w);
+    if (prev) { lastGuess = w; msg.textContent = `‘${josa(w, '은', '는')}’ 이미 ${game.guesses.indexOf(prev) + 1}번째에 쟀어요.`; renderAll(); return; }
+    const i = wordIndex.get(w);
+    if (i === undefined) { msg.className = 'msg err'; msg.textContent = `‘${josa(w, '은', '는')}’ 사전에 없는 낱말이에요. 기본형(예: 먹다, 사과)으로 넣어 보세요.`; return; }
+    const r = day.rankOf(i); const t = day.temp(i);
+    game.guesses.push({ w, t: Math.round(t * 100) / 100, r });
+    lastGuess = w;
+    if (i === day.answer && !game.solved && !game.gaveUp) { game.solved = true; game.finishedAt = Date.now(); game.finalN = game.guesses.length; msg.className = 'msg good'; msg.textContent = `정답이에요! ${game.guesses.length}번 만에 맞혔어요.`; }
+    else msg.textContent = r <= 1000 ? `${r}위 — 정답 근처예요.` : '1,000위 밖이에요.';
+    save(); renderAll();
+  }
+
+  // ---------- render ----------
+  function rankCell(g) {
+    const el = document.createElement('div');
+    if (g.r === 0) { el.className = 'rk'; el.textContent = '정답'; el.style.color = 'var(--ok)'; return el; }
+    if (g.r > 1000) { el.className = 'rk cold'; el.textContent = g.t <= 0 ? '꽁꽁' : '1000위 밖'; return el; }
+    el.className = 'rk';
+    const lab = document.createElement('span'); lab.textContent = g.r + '위';
+    const bar = document.createElement('div'); bar.className = 'bar';
+    const fill = document.createElement('i'); fill.style.width = Math.max(3, (1001 - g.r) / 10) + '%'; fill.style.background = tempColor(g.t);
+    bar.append(fill); el.append(lab, bar); return el;
+  }
+
+  function renderAll() {
+    const ready = !!day;
+    $('in').disabled = !ready; $('go').disabled = !ready;
+    if (!ready) return;
+    // readout
+    const lg = lastGuess ? game.guesses.find((g) => g.w === lastGuess) : null;
+    $('lastw').textContent = lg ? lg.w : '아직 없어요';
+    $('bigtemp').firstChild.textContent = lg ? fmt(lg.t) : '--.--';
+    $('bigtemp').style.color = lg ? tempColor(lg.t) : 'var(--muted)';
+    const pct = (t) => Math.max(0, Math.min(100, t));
+    $('merc').style.width = (lg ? pct(lg.t) : 0) + '%';
+    $('merc').style.background = lg ? tempColor(lg.t) : 'var(--cold)';
+    $('bulb').style.background = lg ? tempColor(lg.t) : 'var(--sunk)';
+    const tube = $('tube'); tube.querySelectorAll('.tick').forEach((e) => e.remove());
+    const glassLeft = 20, w = tube.clientWidth - glassLeft;
+    const ticks = [[day.t1000, '1000위'], [day.t10, '10위'], [day.t1, '1위']];
+    let lastX = -99;
+    for (const [t, label] of ticks) {
+      const x = glassLeft + w * pct(t) / 100;
+      const tk = document.createElement('span'); tk.className = 'tick'; tk.style.left = x + 'px';
+      tk.textContent = x - lastX < 44 ? '' : label; lastX = tk.textContent ? x : lastX;
+      tube.append(tk);
+    }
+    $('legend').innerHTML = '';
+    const lb = (s) => { const b = document.createElement('b'); b.textContent = s; return b; };
+    $('legend').append('정답과 가장 가까운 낱말은 ', lb(fmt(day.t1) + '°'), ', 10번째는 ', lb(fmt(day.t10) + '°'), ', 1000번째는 ', lb(fmt(day.t1000) + '°'), '예요.');
+
+    // log
+    const log = $('log'); log.innerHTML = '';
+    const gs = game.guesses.map((g, k) => ({ ...g, k: k + 1 }));
+    $('count').textContent = gs.length ? `${gs.length}번 잼` : '';
+    if (!gs.length) {
+      const e = document.createElement('div'); e.className = 'empty';
+      e.textContent = '첫 낱말을 넣어 보세요. 사람, 시간, 음식처럼 넓은 뜻의 명사로 시작하면 방향을 잡기 쉬워요.';
+      log.append(e);
+    } else {
+      const hd = document.createElement('div'); hd.className = 'lrow hd';
+      ['#', '낱말', '온도', '순위'].forEach((s, j) => { const c = document.createElement('span'); c.textContent = s; if (j === 2) c.style.textAlign = 'right'; hd.append(c); });
+      log.append(hd);
+      const sorted = [...gs].sort((x, y) => y.t - x.t);
+      const latest = gs.find((g) => g.w === lastGuess);
+      const rows = latest ? [latest, ...sorted.filter((g) => g !== latest)] : sorted;
+      rows.forEach((g, j) => {
+        const row = document.createElement('div');
+        row.className = 'lrow' + (g.r === 0 ? ' win' : j === 0 && latest ? ' latest' : '');
+        const n = document.createElement('span'); n.className = 'n'; n.textContent = g.k;
+        const wv = document.createElement('span'); wv.className = 'w'; wv.textContent = g.w;
+        const tv = document.createElement('span'); tv.className = 't'; tv.textContent = fmt(g.t) + '°'; tv.style.color = tempColor(g.t);
+        row.append(n, wv, tv, rankCell(g));
+        log.append(row);
+        if (j === 0 && latest && rows.length > 1) { const sep = document.createElement('div'); sep.style.borderTop = '2px solid var(--line)'; log.append(sep); }
+      });
+    }
+    renderDone(); renderGiveUp();
+  }
+
+  function renderDone() {
+    const box = $('done');
+    if (!game.solved && !game.gaveUp) { box.hidden = true; return; }
+    box.hidden = false; box.innerHTML = '';
+    const ans = words[day.answer];
+    const h = document.createElement('h2');
+    const em = document.createElement('em'); em.textContent = ans;
+    if (game.solved) h.append('정답은 ', em, '!');
+    else h.append('오늘의 낱말은 ', em, hasBatchim(ans) ? '이었어요' : '였어요');
+    const p = document.createElement('p');
+    const best = game.guesses.filter((g) => g.r > 0).reduce((m, g) => Math.min(m, g.r), Infinity);
+    const fn = game.finalN || game.guesses.length;
+    p.textContent = game.solved ? `${fn}번 만에 맞혔어요. 오늘 밤 12시에 새 낱말이 나와요.` : `${fn}번 재고 포기했어요${best <= 1000 ? ` (가장 가까웠던 건 ${best}위)` : ''}. 오늘 밤 12시에 새 낱말이 나와요.`;
+    const btns = document.createElement('div'); btns.className = 'row-btns';
+    const cp = document.createElement('button'); cp.className = 'btn'; cp.type = 'button'; cp.textContent = '결과 복사하기';
+    cp.addEventListener('click', () => copyResult(cp));
+    btns.append(cp);
+    const nh = document.createElement('p'); nh.textContent = `‘${ans}’${hasBatchim(ans) ? '과' : '와'} 가장 가까운 낱말 30개`; nh.style.fontWeight = '600'; nh.style.color = 'var(--ink)';
+    const near = document.createElement('div'); near.className = 'near';
+    for (let k = 1; k <= 30; k++) {
+      const i = day.order[k]; const s = document.createElement('span');
+      const a = document.createElement('b'); a.textContent = k + '. ' + words[i]; a.style.fontWeight = '500';
+      const t = document.createElement('i'); t.textContent = fmt(day.temp(i)) + '°';
+      s.append(a, t); near.append(s);
+    }
+    box.append(h, p, btns, nh, near);
+  }
+
+  function renderGiveUp() {
+    const box = $('giveupbox'); box.innerHTML = '';
+    if (game.solved || game.gaveUp || game.guesses.length < 1) return;
+    const b = document.createElement('button'); b.className = 'btn danger'; b.type = 'button'; b.textContent = '포기하고 정답 보기';
+    b.addEventListener('click', () => {
+      box.innerHTML = '';
+      const t = document.createElement('span'); t.textContent = '정말 포기할까요? 오늘 기록은 포기로 남아요.';
+      const y = document.createElement('button'); y.className = 'btn danger'; y.type = 'button'; y.textContent = '포기할래요';
+      const n = document.createElement('button'); n.className = 'btn'; n.type = 'button'; n.textContent = '계속할게요';
+      y.addEventListener('click', () => { game.gaveUp = true; game.finishedAt = Date.now(); game.finalN = game.guesses.length; save(); renderAll(); });
+      n.addEventListener('click', renderGiveUp);
+      box.append(t, y, n); n.focus();
+    });
+    box.append(b);
+  }
+
+  function copyResult(btn) {
+    const gs = game.guesses; const first1000 = gs.findIndex((g) => g.r <= 1000);
+    const lines = [`낱말온도 #${day.no}`, game.solved ? `${gs.length}번 만에 정답!` : `${gs.length}번 재고 포기`];
+    if (first1000 >= 0) lines.push(`처음 1000위 안에 든 건 ${first1000 + 1}번째`);
+    const strip = gs.map((g) => (g.r === 0 ? '■' : g.r <= 10 ? '▇' : g.r <= 100 ? '▅' : g.r <= 1000 ? '▃' : '▁')).join('');
+    lines.push(strip.length > 40 ? strip.slice(0, 40) + '…' : strip);
+    const text = lines.join('\n');
+    const ok = () => { btn.textContent = '복사했어요'; setTimeout(() => (btn.textContent = '결과 복사하기'), 1600); };
+    try {
+      navigator.clipboard.writeText(text).then(ok, () => fallback());
+    } catch { fallback(); }
+    function fallback() {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.width = '100%'; ta.rows = 4; ta.readOnly = true;
+      btn.after(ta); ta.select(); btn.textContent = '아래 글을 복사하세요';
+    }
+  }
+
+  // ---------- friends board (claude.ai db) ----------
+  const board = (() => {
+    let db = null, user = null, uid = null, unsub = null, timer = null, canWrite = true, writing = false, again = false, pushT = null, docs = [];
+    const list = $('blist');
+    const note = (t) => { list.innerHTML = ''; const d = document.createElement('div'); d.className = 'note'; d.textContent = t; list.append(d); };
+
+    async function init() {
+      try {
+        if (!window.claude || typeof window.claude.use !== 'function') { off(); return; }
+        [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+        uid = user ? await user.id() : null;
+        if (!db || !uid) { off(); return; }
+        const c = await user.can('data.write');
+        if (c === false) canWrite = false;
+        if (day) onDay();
+      } catch { off(); }
+    }
+    function off() { db = null; $('board').hidden = true; }
+
+    async function syncPrivate() {
+      try {
+        const snap = await db.doc(`data/users/${uid}/${day.key}`).get();
+        const remote = snap.exists ? snap.data() : null;
+        if (remote && Array.isArray(remote.guesses) && remote.guesses.length > game.guesses.length) {
+          game = { guesses: remote.guesses.map((g) => ({ w: g.w, t: g.t, r: g.r })), solved: !!remote.solved, gaveUp: !!remote.gaveUp, finishedAt: remote.finishedAt || null, finalN: remote.finalN || null };
+          lastGuess = game.guesses.length ? game.guesses[game.guesses.length - 1].w : null;
+          store.set('natmal:v1:' + day.key, game); renderAll();
+        }
+      } catch {}
+    }
+
+    function onDay() {
+      if (!db || !uid || !day) return;
+      if (unsub) unsub();
+      note('친구 기록을 불러오는 중이에요…');
+      clearTimeout(timer);
+      timer = setTimeout(() => note('친구 기록에 아직 연결되지 않았어요. 잠시 뒤에 다시 보여 줄게요.'), 10000);
+      unsub = db.collection('players').where('day', '==', day.key).onSnapshot((s) => {
+        if (!s.metadata.fromCache) clearTimeout(timer);
+        docs = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+        render();
+      }, () => { clearTimeout(timer); note('친구 기록을 불러오지 못했어요.'); });
+      syncPrivate().then(() => { if (game.guesses.length) pushSoon(); });
+    }
+
+    async function render() {
+      const ids = docs.map((d) => d.id);
+      const ps = ids.length ? await user.profiles(ids) : {};
+      list.innerHTML = '';
+      if (!docs.length) { note(canWrite ? '아직 아무도 오늘 낱말을 재지 않았어요. 첫 낱말을 넣으면 여기에 내 기록이 올라가요.' : '아직 오늘 기록이 없어요.'); }
+      const rank = (d) => (d.solved ? [0, d.n] : d.gaveUp ? [2, d.n] : [1, d.bestRank ?? 99999]);
+      docs.sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1]; });
+      for (const d of docs) {
+        const p = ps[d.id] || { name: '', avatarUrl: '' };
+        const row = document.createElement('div'); row.className = 'brow';
+        const img = document.createElement('img'); img.alt = ''; if (p.avatarUrl) img.src = p.avatarUrl;
+        const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name || '이름 모를 친구';
+        if (d.id === uid) { const s = document.createElement('small'); s.textContent = '나'; nm.append(s); }
+        const st = document.createElement('span'); st.className = 'st' + (d.solved ? ' win' : '');
+        st.textContent = d.solved ? `정답 · ${d.n}번` : d.gaveUp ? `포기 · ${d.n}번` : `${d.n}번째 · ${d.bestRank && d.bestRank <= 1000 ? '최고 ' + d.bestRank + '위' : '1000위 밖'}`;
+        row.append(img, nm, st); list.append(row);
+      }
+      if (!canWrite) { const n = document.createElement('div'); n.className = 'note'; n.textContent = '이 링크로는 내 기록을 올릴 수 없어요. 공유한 사람에게 ‘참여자’ 이상 권한을 받으면 함께 올라가요.'; list.append(n); }
+    }
+
+    function body() {
+      const gs = game.guesses; const best = gs.filter((g) => g.r > 0).reduce((m, g) => Math.min(m, g.r), 99999);
+      return { day: day.key, n: game.finalN || gs.length, bestRank: best, solved: !!game.solved, gaveUp: !!game.gaveUp, finishedAt: game.finishedAt || null, updatedAt: Date.now() };
+    }
+    function pushSoon() { if (!db || !uid || !canWrite) return; clearTimeout(pushT); pushT = setTimeout(push, 700); }
+    async function push() {
+      if (writing) { again = true; return; }
+      writing = true;
+      try {
+        await db.doc('players/' + uid).set(body());
+        await db.doc(`data/users/${uid}/${day.key}`).set({ guesses: game.guesses, solved: !!game.solved, gaveUp: !!game.gaveUp, finishedAt: game.finishedAt || null, finalN: game.finalN || null });
+      } catch (e) {
+        if (e && (e.code === 'invalid_argument' || e.code === 'not_granted')) { canWrite = false; render(); }
+      }
+      writing = false;
+      if (again) { again = false; push(); }
+    }
+    return { init, onDay, pushSoon };
+  })();
+
+  // ---------- clock / day rollover ----------
+  function tick() {
+    const now = Date.now();
+    const left = DAY - ((now + KST) % DAY);
+    const h = Math.floor(left / 3600000), m = Math.floor(left / 60000) % 60, s = Math.floor(left / 1000) % 60;
+    $('clock').textContent = [h, m, s].map((x) => String(x).padStart(2, '0')).join(':');
+    if (meta && day && kstDayIndex(now) !== day.idx) { setupDay(kstDayIndex(now)); $('msg').textContent = '자정이 지나 새 낱말로 바뀌었어요.'; }
+  }
+
+  // ---------- boot ----------
+  function start(hot) {
+    $('form').addEventListener('submit', (e) => { e.preventDefault(); if (!day) return; const v = $('in').value; $('in').value = ''; submit(v); $('in').focus(); });
+    try { window.claude?.hot?.snapshot?.(() => ({ input: $('in').value })); } catch {}
+    if (hot && hot.input) $('in').value = hot.input;
+    tick(); setInterval(tick, 1000);
+    board.init();
+    load().then(() => {
+      setupDay(kstDayIndex(Date.now()));
+      $('in').placeholder = '명사를 하나 넣어 보세요';
+      if (window.matchMedia('(pointer: fine)').matches) $('in').focus();
+    }).catch(() => {
+      $('legend').textContent = '단어 사전을 불러오지 못했어요. 페이지를 새로고침해 주세요.';
+    });
+    window.addEventListener('resize', () => { if (day) renderAll(); });
+  }
+  try {
+    if (window.claude?.hot?.ready) window.claude.hot.ready(start); else start(window.claude?.hot?.data ?? {});
+  } catch { start({}); }
+})();
+</script>
+</body>
+</html>
